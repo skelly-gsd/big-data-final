@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<meta charset="utf-8" />
+<title>Interactive Priority Weighting</title>
+<meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+<script src="https://api.mapbox.com/mapbox-gl-js/v1.13.0/mapbox-gl.js"></script>
+<link href="https://api.mapbox.com/mapbox-gl-js/v1.13.0/mapbox-gl.css" rel="stylesheet" />
+<script src='https://d3js.org/d3.v4.min.js'></script> 
+<script src="https://d3js.org/d3-dsv.v1.min.js"></script>
+<script src="https://d3js.org/d3-fetch.v1.min.js"></script>
+<script src="https://d3js.org/d3-format.v1.min.js"></script>
+
+<style>
+
+	#map { 
+		width: 1800px;
+		height: 900px;
+		position: absolute; 
+		top: 20px;
+		left: 20px; 
+	}
+
+	.map-overlay {
+		font: 12px/20px 'Helvetica Neue', Arial, Helvetica, sans-serif;
+		position: absolute;
+		width: 15%;
+		top: 15px;
+		left: 25px;
+		padding: 10px;
+	}
+ 
+	.map-overlay .map-overlay-inner {
+		background-color: #fff;
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+		border-radius: 3px;
+		padding: 10px;
+		margin-bottom: 10px;
+	}
+ 
+	.map-overlay h2 {
+		line-height: 24px;
+		display: block;
+		margin: 0 0 10px;
+	}
+ 
+	.map-overlay .legend .bar {
+		height: 10px;
+		width: 100%;
+		background: linear-gradient(to right, #415567, #ffffff, #CB9B8E);
+	}
+ 
+	.map-overlay input {
+		background-color: transparent;
+		display: inline-block;
+		width: 100%;
+		position: relative;
+		margin: 0;
+		cursor: ew-resize;
+	}
+
+	.map-overlay-vis {
+		font: 12px 'DIN Offc Pro Medium', sans-serif;
+		position: absolute;
+		width: 140px;
+		top: 55px;
+		right: 102px;
+		padding: 10px;
+		visibility: hidden;
+	}
+ 
+	.map-overlay-vis .map-overlay-vis-inner {
+		background-color: #fff;
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+		border-radius: 3px;
+		padding: 10px;
+		margin-bottom: 10px;
+	}
+ 
+	.map-overlay-vis label {
+		display: block;
+		margin: 0 0 10px;
+	}
+ 
+	.map-overlay-vis input {
+		background-color: transparent;
+		display: inline-block;
+		width: 100%;
+		position: relative;
+		margin: 0;
+		cursor: ew-resize;
+	}
+
+	#menu {
+		background: #fff; 
+		position: absolute; 
+		z-index: 1; 
+		top: 25px; 
+		right: 110px; 
+		border-radius: 5px; 
+		width: 140px; 
+		border: 1px solid rgba(0,0,0,0.2); 
+		font-family: 'DIN Offc Pro Medium', sans-serif;
+	}
+
+	#menu a {
+		font-size: 13px;
+		color: #404040;
+		display: block;
+		margin: 0; 
+		padding: 0; 
+		padding: 10px; 
+		text-decoration: none; 
+		border-bottom: 1px solid rgba(0,0,0,0.25); 
+		text-align: center; 
+	}
+
+	#menu a:last-child {
+		border: none; 
+	}
+	#menu a:hover {
+		background-color: #f8f8f8; 
+		color: #404040; 
+	}
+
+	#menu a.active {
+		background-color: #3887be;
+		color: #ffffff;
+		border-radius: 5px; 
+	}
+	#menu a.active:hover {
+		background: #3074a4;
+	}
+
+</style>
+
+</head>
+<body>
+
+
+<div id="map"></div>
+<nav id='menu'></nav>
+
+
+<div class="map-overlay top">
+
+	<div class="map-overlay-inner">
+		<h2>Canopy Weight</h2>
+		<input id="slider-canopy" type="range" min="0" max="2" step="0.25" value="1" />
+		<label id="multiplier-canopy">1x</label>
+	</div>
+
+	<div class="map-overlay-inner">
+		<h2>Flood Weight</h2>
+		<input id="slider-flood" type="range" min="0" max="2" step="0.25" value="1" />
+		<label id="multiplier-flood">1x</label>
+	</div>
+
+	<div class="map-overlay-inner">
+		<h2>Temperature Weight</h2>
+		<label id="month"></label>
+		<input id="slider-temp" type="range" min="0" max="2" step="0.25" value="1" />
+		<label id="multiplier-temp">1x</label>
+	</div>
+
+	<div class="map-overlay-inner">
+		<h2>SVI Weight</h2>
+		<input id="slider-svi" type="range" min="0" max="2" step="0.25" value="1" />
+		<label id="multiplier-svi">1x</label>
+	</div>
+
+	<div class="map-overlay-inner">
+		<div id="legend" class="legend">
+			<div class="bar"></div>
+			<div>Planting Priority - Lowest to Highest</div>
+		</div>
+	</div>
+</div>
+
+<div class="map-overlay-vis top">
+	<div class="map-overlay-vis-inner" id="slider-blocks">
+		<label>Blocks opacity: <span id="slider-value">100%</span></label>
+		<input id="slider-blocks-input" type="range" min="50" max="100" step="0" value="100"/>
+	</div>
+</div>
+
+<script> type="text/javascript"
+
+	mapboxgl.accessToken = 'pk.eyJ1Ijoic2tlbGx5LWdzZCIsImEiOiJja2dnamkwZXYxdjIwMnJxdXZxOW52aTVvIn0.Wxx4iY7dKMSp57R384ZGoQ';
+
+	const map = new mapboxgl.Map({
+		container: 'map', // container id
+		style: 'mapbox://styles/skelly-gsd/ckhz920x30lko19qnejd29jc6', // style URL
+		center: [-71.07, 42.33], // starting position [lng, lat]
+		zoom: 11.25 // starting zoom
+	});
+
+	var sliderCanopy = document.getElementById('slider-canopy');
+	var mCanopyText = document.getElementById('multiplier-canopy');
+	var mCanopy = sliderCanopy.value;
+
+	var sliderFlood = document.getElementById('slider-flood');
+	var mFloodText = document.getElementById('multiplier-flood');
+	var mFlood = sliderFlood.value;
+
+	var sliderTemp = document.getElementById('slider-temp');
+	var mTempText = document.getElementById('multiplier-temp');
+	var mTemp = sliderTemp.value;
+
+	var sliderSVI = document.getElementById('slider-svi');
+	var mSVIText = document.getElementById('multiplier-svi');
+	var mSVI = sliderSVI.value;
+
+	var sliderBlocksInput = document.getElementById('slider-blocks-input');
+	var sliderBlocksValue = document.getElementById('slider-value');
+
+	let hoveredStateId = null;
+
+  	const popup = new mapboxgl.Popup({
+    	closeButton: false,
+    	closeOnClick: false
+  	});
+
+  	var toggleableLayerIds = ['satellite'];
+
+  	//Map Load
+
+	map.on('load', function() {
+
+		d3.csv("Blocks_InteractiveMap_Normalized.csv").then((data) => {
+			initFeatureState(data)
+		});
+
+		const initFeatureState = (data) => {
+			map.addSource('blocksJSON', {
+				type: 'geojson',
+				data: 'Blocks_Processed.json',
+				promoteId: 'GEOID10'
+			})
+		
+
+			map.addLayer({
+        		'id': 'blocks',
+        		'type': 'fill',
+        		'source': 'blocksJSON',
+        		'paint': {
+          			'fill-color': ['case',
+            			['!=', ['feature-state', 'index'], null],
+            			['interpolate',
+              				['linear'],
+              				['to-number', ['feature-state', 'index']],
+              				0, '#415567',
+              				1.5, '#ffffff',
+              				4, '#CB9B8E'
+            			],
+            		'rgb(140, 140, 140)'
+            		]
+        		},
+      		});
+
+      		map.on('mousemove', 'blocks', (e) => {
+        		if (e.features.length > 0) {
+          		if (hoveredStateId) {
+            		map.setFeatureState({
+              			source: 'blocksJSON',
+              			id: hoveredStateId
+            		}, {
+             			hover: false
+            		});
+          		}
+          		hoveredStateId = e.features[0].id;
+          			map.setFeatureState({
+            		source: 'blocksJSON',
+            		id: hoveredStateId
+          		}, {
+            		hover: true
+          		});
+        		}
+      		});
+
+
+      		map.on('mousemove', 'blocks', (e) => {
+
+        		map.getCanvas().style.cursor = 'pointer';
+        		const description = `
+        		<p>BlockID: ${e.features[0].id} <p>
+        		<p>Neighborhood: ${e.features[0].properties.Name} <p>
+        		<p>Index:  ${e.features[0].state.index} </p>`;
+	      
+        		popup
+          			.setLngLat(e.lngLat)
+          			.setHTML(description)
+          			.addTo(map);
+      		});
+
+      		map.on('mouseleave', 'blocks', () => {
+        		if (hoveredStateId) {
+          			map.setFeatureState({
+            			source: 'blocksJSON',
+            			id: hoveredStateId
+          			}, {
+            			hover: false
+          			});
+        		}
+        		hoveredStateId = null;
+        		map.getCanvas().style.cursor = '';
+        		popup.remove();
+      		});
+
+      		const setStates = (data) => {
+        		data.forEach((row) => {
+         			map.setFeatureState({
+            		source: 'blocksJSON', 
+            		id: row.GEOID10
+          			}, {
+            		index: row.nTotFlood*mFlood + (1-row.nCanopyLCLU)*mCanopy + row.nTemp*mTemp + row.nTotSVI*mSVI
+          			})
+        		})
+      		}
+
+      		const setAfterLoad = (e) => {
+        		if (e.sourceId === 'blocksJSON' && e.isSourceLoaded) {
+          			setStates(data);
+          			map.off('sourcedata', setAfterLoad);
+        		}
+      		}
+
+      		if (map.isSourceLoaded('blocksJSON')) {
+        		setStates(data);
+      		} else {
+        		map.on('sourcedata', setAfterLoad);
+      		}
+
+
+
+      		//Canopy Slider Event
+
+			sliderCanopy.addEventListener('input', function(e) {
+      			var mCanopy =
+      				parseFloat(e.target.value, 0.25);
+
+      			var mFlood = sliderFlood.value;
+      			var mTemp = sliderTemp.value;
+      			var mSVI = sliderSVI.value;
+
+      			const setStates = (data) => {
+        			data.forEach((row) => {
+         				map.setFeatureState({
+            			source: 'blocksJSON',
+            			id: row.GEOID10
+          				}, {
+            			index: row.nTotFlood*mFlood + (1-row.nCanopyLCLU)*mCanopy + row.nTemp*mTemp + row.nTotSVI*mSVI
+          				})
+        			})
+      			}
+
+      			mCanopyText.textContent = e.target.value + 'x';
+
+      			if (map.isSourceLoaded('blocksJSON')) {
+        			setStates(data);
+      			} else {
+        			map.on('sourcedata', setAfterLoad);
+      			}
+
+      			data.forEach(function(d) {		
+      				d.index = d.nTotFlood*mFlood + (1-d.nCanopyLCLU)*mCanopy + d.nTemp*mTemp + d.nTotSVI*mSVI;
+      			});
+
+      			var min = d3.min(data, function(d) {
+      				return d.index;
+      			});
+      			var max = d3.max(data, function(d) {
+      				return d.index;
+      			});
+      			var med = d3.median(data, function(d) {
+      				return d.index;
+      			});
+
+      			var fillScale = ['case',
+            			['!=', ['feature-state', 'index'], null],
+            			['interpolate',
+              				['linear'],
+              				['to-number', ['feature-state', 'index']],
+              				min, '#415567',
+              				med, '#ffffff',
+              				max, '#CB9B8E'
+            			],
+            		'rgb(140, 140, 140)'
+            		];
+
+            	map.setPaintProperty('blocks', 'fill-color', fillScale)
+
+      		});
+
+
+
+      		//Flood Slider Event
+
+      		sliderFlood.addEventListener('input', function(e) {
+      			let mFlood =
+      				parseFloat(e.target.value, 0.25);
+
+      			var mCanopy = sliderCanopy.value;
+      			var mTemp = sliderTemp.value;
+      			var mSVI = sliderSVI.value;
+
+      			const setStates = (data) => {
+        			data.forEach((row) => {
+         				map.setFeatureState({
+            			source: 'blocksJSON', 
+            			id: row.GEOID10
+          				}, {
+            			index: row.nTotFlood*mFlood + (1-row.nCanopyLCLU)*mCanopy + row.nTemp*mTemp + row.nTotSVI*mSVI
+          				})
+        			})
+      			}
+
+      			mFloodText.textContent = e.target.value + 'x';
+
+      			if (map.isSourceLoaded('blocksJSON')) {
+        			setStates(data);
+      			} else {
+        			map.on('sourcedata', setAfterLoad);
+      			}
+
+      			data.forEach(function(d) {		
+      				d.index = d.nTotFlood*mFlood + (1-d.nCanopyLCLU)*mCanopy + d.nTemp*mTemp + d.nTotSVI*mSVI;
+      			});
+
+      			var min = d3.min(data, function(d) {
+      				return d.index;
+      			});
+      			var max = d3.max(data, function(d) {
+      				return d.index;
+      			});
+      			var med = d3.mean(data, function(d) {
+      				return d.index;
+      			});
+
+      			var fillScale = ['case',
+            			['!=', ['feature-state', 'index'], null],
+            			['interpolate',
+              				['linear'],
+              				['to-number', ['feature-state', 'index']],
+              				min, '#415567',
+              				med, '#ffffff',
+              				max, '#CB9B8E'
+            			],
+            		'rgb(140, 140, 140)'
+            		];
+
+            	map.setPaintProperty('blocks', 'fill-color', fillScale)
+
+      		});
+
+      		//Temp Slider Event
+
+      		sliderTemp.addEventListener('input', function(e) {
+      			let mTemp =
+      				parseFloat(e.target.value, 0.25)
+
+      			var mCanopy = sliderCanopy.value;
+      			var mFlood = sliderFlood.value;
+      			var mSVI = sliderSVI.value;
+
+      			const setStates = (data) => {
+        			data.forEach((row) => {
+         				map.setFeatureState({
+            			source: 'blocksJSON', 
+            			id: row.GEOID10
+          				}, {
+            			index: row.nTotFlood*mFlood + (1-row.nCanopyLCLU)*mCanopy + row.nTemp*mTemp + row.nTotSVI*mSVI
+          				})
+        			})
+      			}
+
+      			mTempText.textContent = e.target.value + 'x';
+
+      			if (map.isSourceLoaded('blocksJSON')) {
+        			setStates(data);
+      			} else {
+        			map.on('sourcedata', setAfterLoad);
+      			}
+
+      			data.forEach(function(d) {		
+      				d.index = d.nTotFlood*mFlood + (1-d.nCanopyLCLU)*mCanopy + d.nTemp*mTemp + d.nTotSVI*mSVI;
+      			});
+
+      			var min = d3.min(data, function(d) {
+      				return d.index;
+      			});
+      			var max = d3.max(data, function(d) {
+      				return d.index;
+      			});
+      			var med = d3.mean(data, function(d) {
+      				return d.index;
+      			});
+
+      			var fillScale = ['case',
+            			['!=', ['feature-state', 'index'], null],
+            			['interpolate',
+              				['linear'],
+              				['to-number', ['feature-state', 'index']],
+              				min, '#415567',
+              				med, '#ffffff',
+              				max, '#CB9B8E'
+            			],
+            		'rgb(140, 140, 140)'
+            		];
+
+            	map.setPaintProperty('blocks', 'fill-color', fillScale)
+
+      		});
+
+      		//SVI Slider Event
+
+      		sliderSVI.addEventListener('input', function(e) {
+      			let mSVI =
+      				parseFloat(e.target.value, 0.25);
+
+      			var mCanopy = sliderCanopy.value;
+      			var mFlood = sliderFlood.value;
+      			var mTemp = sliderTemp.value;
+
+      			const setStates = (data) => {
+        			data.forEach((row) => {
+         				map.setFeatureState({
+            			source: 'blocksJSON', 
+            			id: row.GEOID10
+          				}, {
+            			index: row.nTotFlood*mFlood + (1-row.nCanopyLCLU)*mCanopy + row.nTemp*mTemp + row.nTotSVI*mSVI
+          				})
+        			})
+      			}
+
+      			mSVIText.textContent = e.target.value + 'x';
+
+      			if (map.isSourceLoaded('blocksJSON')) {
+        			setStates(data);
+      			} else {
+        			map.on('sourcedata', setAfterLoad);
+      			}
+
+      			data.forEach(function(d) {		
+      				d.index = d.nTotFlood*mFlood + (1-d.nCanopyLCLU)*mCanopy + d.nTemp*mTemp + d.nTotSVI*mSVI;
+      			});
+
+      			var min = d3.min(data, function(d) {
+      				return d.index;
+      			});
+      			var max = d3.max(data, function(d) {
+      				return d.index;
+      			});
+      			var med = d3.mean(data, function(d) {
+      				return d.index;
+      			});
+
+      			var fillScale = ['case',
+            			['!=', ['feature-state', 'index'], null],
+            			['interpolate',
+              				['linear'],
+              				['to-number', ['feature-state', 'index']],
+              				min, '#415567',
+              				med, '#ffffff',
+              				max, '#CB9B8E'
+            			],
+            		'rgb(140, 140, 140)'
+            		];
+
+            	map.setPaintProperty('blocks', 'fill-color', fillScale)
+
+      		});
+
+
+
+      		//Blocks opacity slider
+
+      		sliderBlocksInput.addEventListener('input', function (e) {
+				map.setPaintProperty('blocks', 'fill-opacity', parseInt(e.target.value, 10) / 100);
+ 				sliderBlocksValue.textContent = e.target.value + '%';
+			});
+			
+      	}
+  	
+	})
+
+	for (var i = 0; i < toggleableLayerIds.length; i++) {
+		var id = toggleableLayerIds[i];
+ 
+		var link = document.createElement('a');
+		link.href = '#';
+		link.className = '';
+		link.textContent = id;
+ 
+		link.onclick = function (e) {
+			var clickedLayer = this.textContent;
+			e.preventDefault();
+			e.stopPropagation();
+ 
+			var visibility = map.getLayoutProperty(clickedLayer, 'visibility');
+ 
+			if (visibility === 'visible') {
+				map.setLayoutProperty(clickedLayer, 'visibility', 'none');
+				document.getElementById('slider-blocks').style.visibility = 'hidden';
+				this.className = '';
+			} else {
+				this.className = 'active';
+				map.setLayoutProperty(clickedLayer, 'visibility', 'visible');
+				document.getElementById('slider-blocks').style.visibility = 'visible';
+			}
+		};
+
+		var layers = document.getElementById('menu');
+		layers.appendChild(link);
+
+	}
+
+
+
+</script>
+
+</body>
+</html>
